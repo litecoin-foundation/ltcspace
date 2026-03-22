@@ -478,6 +478,7 @@ class Mining {
 
       let totalInserted = 0;
       const blocksPrices: BlockPrice[] = [];
+      let priceIndex = 0;
 
       for (const block of blocksWithoutPrices) {
         // Quick optimisation, out kraken feed only goes back to 2013-09-12 00:00:00, so skip the first 422806 blocks
@@ -488,14 +489,19 @@ class Mining {
           });
           continue;
         }
-        for (const price of prices) {
-          if (block.timestamp < price.time) {
-            blocksPrices.push({
-              height: block.height,
-              priceId: price.id,
-            });
-            break;
-          };
+        // Back up if needed (handles minor timestamp non-monotonicity between consecutive blocks)
+        while (priceIndex > 0 && prices[priceIndex - 1].time > block.timestamp) {
+          priceIndex--;
+        }
+        // Advance to the first price recorded after this block's timestamp
+        while (priceIndex < prices.length && prices[priceIndex].time <= block.timestamp) {
+          priceIndex++;
+        }
+        if (priceIndex < prices.length) {
+          blocksPrices.push({
+            height: block.height,
+            priceId: prices[priceIndex].id,
+          });
         }
 
         if (blocksPrices.length >= 100000) {
