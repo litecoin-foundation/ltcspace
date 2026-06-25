@@ -1493,7 +1493,7 @@ class DatabaseMigration {
       pegindex int(11) NOT NULL,
       pegblocktime int(11) unsigned NOT NULL,
       PRIMARY KEY (txid, txindex),
-      FOREIGN KEY (bitcoinaddress) REFERENCES federation_addresses (bitcoinaddress)
+      CONSTRAINT federation_txos_ibfk_1 FOREIGN KEY (bitcoinaddress) REFERENCES federation_addresses (bitcoinaddress)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8;`;
   }
 
@@ -1524,7 +1524,7 @@ class DatabaseMigration {
       median_fee double unsigned NOT NULL,
       PRIMARY KEY (height),
       INDEX (pool_id),
-      FOREIGN KEY (pool_id) REFERENCES pools (id)
+      CONSTRAINT blocks_ibfk_1 FOREIGN KEY (pool_id) REFERENCES pools (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8;`;
   }
 
@@ -1557,7 +1557,7 @@ class DatabaseMigration {
       pool_id smallint unsigned NULL,
       PRIMARY KEY (hashrate_timestamp),
       INDEX (pool_id),
-      FOREIGN KEY (pool_id) REFERENCES pools (id)
+      CONSTRAINT hashrates_ibfk_1 FOREIGN KEY (pool_id) REFERENCES pools (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8;`;
   }
 
@@ -1723,7 +1723,7 @@ class DatabaseMigration {
       payload blob NOT NULL,
       UNIQUE KEY public_key_type (public_key, type),
       INDEX (public_key),
-      FOREIGN KEY (public_key)
+      CONSTRAINT nodes_records_ibfk_1 FOREIGN KEY (public_key)
         REFERENCES nodes (public_key)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8;`;
@@ -1744,7 +1744,7 @@ class DatabaseMigration {
       txid varchar(65) NOT NULL,
       cluster varchar(65) DEFAULT NULL,
       PRIMARY KEY (txid),
-      FOREIGN KEY (cluster) REFERENCES cpfp_clusters (root) ON DELETE SET NULL
+      CONSTRAINT transactions_ibfk_1 FOREIGN KEY (cluster) REFERENCES cpfp_clusters (root) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8;`;
   }
 
