@@ -360,7 +360,7 @@ class BlocksRepository {
     interval = Common.getSqlInterval(interval);
 
     const params: any[] = [];
-    let query = `SELECT count(height) as blockCount
+    let query = `SELECT COUNT(*) as blockCount
       FROM blocks 
       WHERE stale = 0`;
 
@@ -374,7 +374,7 @@ class BlocksRepository {
     }
 
     try {
-      const [rows] = await DB.query(query, params);
+      const [rows] = await DB.queryRead(query, params);
       return <number>rows[0].blockCount;
     } catch (e) {
       logger.err(`Cannot count blocks for this pool (using offset). Reason: ` + (e instanceof Error ? e.message : e));
@@ -536,7 +536,7 @@ class BlocksRepository {
       LIMIT 100`;
 
     try {
-      const [rows]: any[] = await DB.query(query, params);
+      const [rows]: any[] = await DB.queryRead(query, params);
 
       const blocks: BlockExtended[] = [];
       for (const block of rows) {

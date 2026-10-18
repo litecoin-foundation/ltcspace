@@ -6,6 +6,9 @@ import logger from '../logger';
 import { PoolInfo, PoolTag } from '../mempool.interfaces';
 
 class PoolsRepository {
+  // Keys are normalized SQL intervals (a fixed set), not arbitrary request paths.
+  private poolsInfoCache = new Map<string | null, { expiresAt: number; result: Promise<PoolInfo[]> }>();
+
   /**
    * Get all pools tagging info
    * @asyncUnsafe
@@ -34,7 +37,26 @@ class PoolsRepository {
    */
   public async $getPoolsInfo(interval: string | null = null): Promise<PoolInfo[]> {
     interval = Common.getSqlInterval(interval);
+    const cached = this.poolsInfoCache.get(interval);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.result.then(rows => rows.map(row => ({ ...row })));
+    }
 
+    // Keep the entry pending until the underlying query finishes, even on a cold cache.
+    const entry = { expiresAt: Infinity, result: this.$queryPoolsInfo(interval) };
+    this.poolsInfoCache.set(interval, entry);
+    try {
+      const rows = await entry.result;
+      entry.expiresAt = Date.now() + 60_000;
+      return rows.map(row => ({ ...row }));
+    } catch (e) {
+      this.poolsInfoCache.delete(interval);
+      throw e;
+    }
+  }
+
+  /** @asyncSafe */
+  private async $queryPoolsInfo(interval: string | null): Promise<PoolInfo[]> {
     let query = `
       SELECT
         COUNT(blocks.height) As blockCount,
@@ -45,8 +67,8 @@ class PoolsRepository {
           AVG(blocks_audits.match_rate) AS avgMatchRate,
           AVG((CAST(blocks.fees as SIGNED) - CAST(blocks_audits.expected_fees as SIGNED)) / NULLIF(CAST(blocks_audits.expected_fees as SIGNED), 0)) AS avgFeeDelta,
           unique_id as poolUniqueId
-      FROM blocks
-      JOIN pools on pools.id = pool_id
+      FROM blocks ${interval ? 'FORCE INDEX (blockTimestamp)' : ''}
+      ${interval ? 'STRAIGHT_JOIN' : 'JOIN'} pools on pools.id = pool_id
       LEFT JOIN blocks_audits ON blocks_audits.height = blocks.height
       WHERE blocks.stale = 0
     `;
@@ -59,7 +81,7 @@ class PoolsRepository {
       ORDER BY COUNT(blocks.height) DESC`;
 
     try {
-      const [rows] = await DB.query(query);
+      const [rows] = await DB.queryRead(query);
       return <PoolInfo[]>rows;
     } catch (e) {
       logger.err(`Cannot generate pools stats. Reason: ` + (e instanceof Error ? e.message : e));

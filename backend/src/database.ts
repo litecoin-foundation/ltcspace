@@ -78,6 +78,60 @@ import { execSync } from 'child_process';
     }
   }
 
+  /**
+   * Bound an analytics SELECT, including time spent waiting for a pool connection.
+   * The server deadline stops SQL work; a rejected client promise alone does not.
+   * @asyncUnsafe
+   */
+  public async queryRead<T extends RowDataPacket[] = RowDataPacket[]>(
+    sql: string, params?: unknown[],
+    timeoutMs = Math.min(60_000, config.DATABASE.TIMEOUT > 0 ? config.DATABASE.TIMEOUT : 60_000),
+  ): Promise<[T, FieldPacket[]]> {
+    this.checkDBFlag();
+    if (!/^\s*SELECT\b/i.test(sql) || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('queryRead requires a SELECT and a positive timeout');
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    return new Promise((resolve, reject) => {
+      let expired = false;
+      let activeConnection: PoolConnection | undefined;
+      const expire = (): void => {
+        expired = true;
+        // Do not return a connection with unfinished work to the pool.
+        activeConnection?.destroy();
+        reject(new Error(`DB read exceeded ${timeoutMs / 1000}s - ${sql.slice(0, 160)}`));
+      };
+      const timer = setTimeout(expire, timeoutMs);
+
+      this.getPool().then(pool => pool.getConnection()).then(async connection => {
+        if (expired) {
+          connection.release();
+          return;
+        }
+        activeConnection = connection;
+        try {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            expire();
+            return;
+          }
+          const result = await connection.query<T>(
+            `SET STATEMENT max_statement_time=${remaining / 1000} FOR ${sql}`, params,
+          );
+          resolve(result);
+        } finally {
+          if (!expired) {
+            connection.release();
+          }
+          activeConnection = undefined;
+        }
+      }).catch(reject).finally(() => {
+        clearTimeout(timer);
+      });
+    });
+  }
+
   /** @asyncSafe */
   private async $rollbackAtomic(connection: PoolConnection): Promise<void> {
     try {
